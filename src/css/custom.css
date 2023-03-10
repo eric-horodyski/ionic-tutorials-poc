@@ -285,4 +285,9 @@
   --collapse-button-bg-color-dark: #2e333a;
   --doc-sidebar-width: 300px;
   --doc-sidebar-hidden-width: 30px;
+
+  /* Begin Eric's Hacking */
+  --ifm-container-width: 100%;
+  --ifm-container-width-xl: 100%;
 }
+
