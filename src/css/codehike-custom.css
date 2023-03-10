@@ -350,7 +350,8 @@ html.sail-color-2021 .Badge {
 
 body {
   --ch-scrollycoding-sticker-width: 600px;
-  --ch-scrollycoding-code-min-height: 62vh;
+  --ch-scrollycoding-code-min-height: 80vh;
+  --ch-scrollycoding-code-max-height: 90vh;
 }
 
 .ch-scrollycoding {
