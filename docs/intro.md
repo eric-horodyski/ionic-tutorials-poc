@@ -14,12 +14,6 @@ This tutorial starts with installing and configuring Auth Connect and moves onto
 
 {/_ prettier-ignore _/}
 
-```typescript App.tsx
-// Completed output here.
-```
-
-{/_ prettier-ignore _/}
-
 ```typescript AuthProvider.tsx
 // Completed output here.
 ```
@@ -180,9 +174,9 @@ npm install @ionic-enterprise/auth
 
 ## Configure Auth Connect
 
-### Scaffold the React Provider
+Auth Connect functionality will be exposed through a React Context.
 
-Create a folder `src/providers` and scaffold a file named `AuthProvider.tsx`.
+Create `AuthProvider.tsx` within a folder named `src/providers`.
 
 ```tsx AuthProvider.tsx
 import { ProviderOptions } from "@ionic-enterprise/auth";
@@ -207,13 +201,11 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
 };
 ```
 
----
+Wrap `IonReactRouter` with the new provider so the Context can be shared with the tabs.
 
-### Wrap `IonReactRouter`
+<CH.Section rows={3}>
 
-Open `src/App.tsx` and wrap `IonReactRouter` with the provider.
-
-```tsx App.tsx focus=41,42,73,74
+```tsx src/App.tsx focus=41,42,73,74
 import { Redirect, Route } from "react-router-dom";
 import {
   IonApp,
@@ -292,6 +284,42 @@ const App: React.FC = () => (
 );
 
 export default App;
+```
+
+</CH.Section>
+
+---
+
+### Auth Connect Options
+
+The `options` object gets passed to the `login()` function to help establish the authentication session.
+
+Obtaining this information likely takes coordination with whomever administers the backend services.
+
+You can use your own configuration for this step; however, we suggest starting with our configuration, get the application working, and then try your own configuration after that.
+
+```tsx AuthProvider.tsx focus=7:15
+import { ProviderOptions } from "@ionic-enterprise/auth";
+import { isPlatform } from "@ionic/react";
+import { PropsWithChildren, createContext } from "react";
+
+const isNative = isPlatform("hybrid");
+
+const options: ProviderOptions = {
+  audience: "https://io.ionic.demo.ac",
+  clientId: "yLasZNUGkZ19DGEjTmAITBfGXzqbvd00",
+  discoveryUrl:
+    "https://dev-2uspt-sz.us.auth0.com/.well-known/openid-configuration",
+  logoutUrl: isNative ? "msauth://login" : "http://localhost:8100/login",
+  redirectUri: isNative ? "msauth://login" : "http://localhost:8100/login",
+  scope: "openid offline_access email picture profile",
+};
+
+export const AuthContext = createContext<{}>({});
+
+export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
+  return <AuthContext.Provider value={{}}>{children}</AuthContext.Provider>;
+};
 ```
 
 </CH.Scrollycoding>
