@@ -41,7 +41,7 @@ const config = {
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
         docs: {
-          beforeDefaultRemarkPlugins: [[remarkCodeHike, { theme }]],
+          beforeDefaultRemarkPlugins: [[remarkCodeHike, { theme, lineNumbers: true }]],
           routeBasePath: '/',
           sidebarPath: require.resolve('./sidebars.js'),
         },
