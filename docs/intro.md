@@ -13,7 +13,7 @@ This tutorial starts with installing and configuring Auth Connect and moves onto
 <CH.Code>
 
 ```typescript AuthProvider.tsx
-import { Auth0Provider, AuthConnect, AuthResult, ProviderOptions, TokenType } from '@ionic-enterprise/auth';
+import { AuthConnect, ProviderOptions, Auth0Provider, TokenType } from "@ionic-enterprise/auth";
 import { isPlatform } from '@ionic/react';
 import { PropsWithChildren, createContext, useState, useEffect, useContext } from 'react';
 import { SessionVaultContext } from './SessionVaultProvider';
@@ -48,18 +48,10 @@ export const AuthContext = createContext<{
   logout: () => Promise<void>;
 }>({
   isAuthenticated: false,
-  getAccessToken: () => {
-    throw new Error('Method not implemented.');
-  },
-  getUserName: () => {
-    throw new Error('Method not implemented.');
-  },
-  login: () => {
-    throw new Error('Method not implemented.');
-  },
-  logout: () => {
-    throw new Error('Method not implemented.');
-  },
+  getAccessToken: () => { throw new Error('Method not implemented.'); },
+  getUserName: () => { throw new Error('Method not implemented.'); },
+  login: () => { throw new Error('Method not implemented.'); },
+  logout: () => { throw new Error('Method not implemented.'); },
 });
 
 export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
@@ -96,7 +88,7 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
 
     if (authResult && (await AuthConnect.isAccessTokenExpired(authResult))) {
       const newAuthResult = await refreshAuth(authResult);
-      saveAuthResult(newAuthResult);
+      await saveAuthResult(newAuthResult);
     }
     setIsAuthenticated(!!authResult);
     return authResult;
@@ -1403,7 +1395,7 @@ export default App;
 ### Modify the Auth context
 
 ```tsx AuthProvider.tsx focus=45,48:56,89,95
-import { AuthConnect, ProviderOptions, Auth0Provider, ProviderOptions, TokenType } from "@ionic-enterprise/auth";
+import { AuthConnect, ProviderOptions, Auth0Provider, TokenType } from "@ionic-enterprise/auth";
 import { isPlatform } from "@ionic/react";
 import { PropsWithChildren, createContext } from "react";
 import { SessionVaultContext } from './SessionVaultProvider';
