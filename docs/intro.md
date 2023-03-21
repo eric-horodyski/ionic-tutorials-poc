@@ -12,22 +12,250 @@ This tutorial starts with installing and configuring Auth Connect and moves onto
 
 <CH.Code>
 
-{/_ prettier-ignore _/}
 
 ```typescript AuthProvider.tsx
-// Completed output here.
-```
+import { Auth0Provider, AuthConnect, AuthResult, ProviderOptions, TokenType } from '@ionic-enterprise/auth';
+import { isPlatform } from '@ionic/react';
+import { PropsWithChildren, createContext, useState, useEffect, useContext } from 'react';
+import { SessionVaultContext } from './SessionVaultProvider';
 
-{/_ prettier-ignore _/}
+const isNative = isPlatform('hybrid');
+
+const options: ProviderOptions = {
+  audience: 'https://io.ionic.demo.ac',
+  clientId: 'yLasZNUGkZ19DGEjTmAITBfGXzqbvd00',
+  discoveryUrl: 'https://dev-2uspt-sz.us.auth0.com/.well-known/openid-configuration',
+  logoutUrl: isNative ? 'msauth://login' : 'http://localhost:8100/login',
+  redirectUri: isNative ? 'msauth://login' : 'http://localhost:8100/login',
+  scope: 'openid offline_access email picture profile',
+};
+
+const setupAuthConnect = async (): Promise<void> => {
+  return AuthConnect.setup({
+    platform: isNative ? 'capacitor' : 'web',
+    logLevel: 'DEBUG',
+    ios: { webView: 'private' },
+    web: { uiMode: 'popup', authFlow: 'implicit' },
+  });
+};
+
+const provider = new Auth0Provider();
+
+export const AuthContext = createContext<{
+  isAuthenticated: boolean;
+  getAccessToken: () => Promise<string | undefined>;
+  getUserName: () => Promise<string | undefined>;
+  login: () => Promise<void>;
+  logout: () => Promise<void>;
+}>({
+  isAuthenticated: false,
+  getAccessToken: () => {
+    throw new Error('Method not implemented.');
+  },
+  getUserName: () => {
+    throw new Error('Method not implemented.');
+  },
+  login: () => {
+    throw new Error('Method not implemented.');
+  },
+  logout: () => {
+    throw new Error('Method not implemented.');
+  },
+});
+
+export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
+  const [isSetup, setIsSetup] = useState<boolean>(false);
+  const { clearSession, getSession, setSession } = useContext(SessionVaultContext);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+
+  const saveAuthResult = async (authResult: AuthResult | null): Promise<void> => {
+    if (authResult) {
+      await setSession(authResult);
+      setIsAuthenticated(true);
+    } else {
+      await clearSession();
+      setIsAuthenticated(false);
+    }
+  };
+
+  const refreshAuth = async (authResult: AuthResult): Promise<AuthResult | null> => {
+    let newAuthResult: AuthResult | null = null;
+
+    if (await AuthConnect.isRefreshTokenAvailable(authResult)) {
+      try {
+        newAuthResult = await AuthConnect.refreshSession(provider, authResult);
+      } catch (err) {
+        console.log('Error refreshing session.', err);
+      }
+    }
+
+    return newAuthResult;
+  };
+
+  const getAuthResult = async (): Promise<AuthResult | null> => {
+    let authResult = await getSession();
+
+    if (authResult && (await AuthConnect.isAccessTokenExpired(authResult))) {
+      const newAuthResult = await refreshAuth(authResult);
+      saveAuthResult(newAuthResult);
+    }
+    setIsAuthenticated(!!authResult);
+    return authResult;
+  };
+
+  useEffect(() => {
+    setupAuthConnect().then(() => setIsSetup(true));
+  }, []);
+
+  const getAccessToken = async (): Promise<string | undefined> => {
+    const res = await getAuthResult();
+    return res?.accessToken;
+  };
+
+  const getUserName = async (): Promise<string | undefined> => {
+    const res = await getAuthResult();
+    if (res) {
+      const data = await AuthConnect.decodeToken<{ name: string }>(TokenType.id, res);
+      return data?.name;
+    }
+  };
+
+  const login = async (): Promise<void> => {
+    const authResult = await AuthConnect.login(provider, options);
+    await saveAuthResult(authResult);
+  };
+
+  const logout = async (): Promise<void> => {
+    const authResult = await getAuthResult();
+    if (authResult) {
+      await AuthConnect.logout(provider, authResult);
+      await saveAuthResult(null);
+    }
+  };
+
+  return (
+    <AuthContext.Provider value={{ isAuthenticated, getAccessToken, getUserName, login, logout }}>
+      {isSetup && children}
+    </AuthContext.Provider>
+  );
+};
+```
 
 ```typescript Tab1.tsx
-// Completed output here.
+import { useContext, useEffect, useState } from 'react';
+import { IonButton, IonContent, IonHeader, IonPage, IonTitle, IonToolbar } from '@ionic/react';
+import { AuthContext } from '../providers/AuthProvider';
+import './Tab1.css';
+
+const Tab1: React.FC = () => {
+  const { isAuthenticated, getUserName, login, logout } = useContext(AuthContext);
+  const [userName, setUserName] = useState<string>();
+
+  useEffect(() => {
+    getUserName().then(setUserName);
+  }, [isAuthenticated, getUserName]);
+
+  const handleLogin = async () => {
+    try {
+      await login();
+    } catch (err) {
+      console.log('Error logging in:', err);
+    }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+  };
+
+  return (
+    <IonPage>
+      <IonHeader>
+        <IonToolbar>
+          <IonTitle>Tab 1</IonTitle>
+        </IonToolbar>
+      </IonHeader>
+      <IonContent fullscreen>
+        <IonHeader collapse="condense">
+          <IonToolbar>
+            <IonTitle size="large">Tab 1</IonTitle>
+          </IonToolbar>
+        </IonHeader>
+        {userName && <h1>{userName}</h1>}
+        {!isAuthenticated ? (
+          <IonButton onClick={handleLogin}>Login</IonButton>
+        ) : (
+          <IonButton onClick={handleLogout}>Logout</IonButton>
+        )}
+      </IonContent>
+    </IonPage>
+  );
+};
+
+export default Tab1;
 ```
 
-{/_ prettier-ignore _/}
-
 ```typescript SessionVaultProvider.tsx
-// Completed output here.
+import { AuthResult } from '@ionic-enterprise/auth';
+import { createContext, PropsWithChildren } from 'react';
+import {
+  BrowserVault,
+  DeviceSecurityType,
+  IdentityVaultConfig,
+  Vault,
+  VaultType,
+} from '@ionic-enterprise/identity-vault';
+import { isPlatform } from '@ionic/react';
+
+const createVault = (config: IdentityVaultConfig): Vault | BrowserVault => {
+  return isPlatform('hybrid') ? new Vault(config) : new BrowserVault(config);
+};
+
+const key = 'auth-result';
+const vault = createVault({
+  key: 'io.ionic.gettingstartedacreact',
+  type: VaultType.SecureStorage,
+  deviceSecurityType: DeviceSecurityType.None,
+  lockAfterBackgrounded: 5000,
+  shouldClearVaultAfterTooManyFailedAttempts: true,
+  customPasscodeInvalidUnlockAttempts: 2,
+  unlockVaultOnLoad: false,
+});
+
+export const SessionVaultContext = createContext<{
+  clearSession: () => Promise<void>;
+  getSession: () => Promise<AuthResult | null>;
+  setSession: (value?: AuthResult) => Promise<void>;
+}>({
+  clearSession: () => {
+    throw new Error('Method not implemented.');
+  },
+  getSession: () => {
+    throw new Error('Method not implemented.');
+  },
+  setSession: () => {
+    throw new Error('Method not implemented.');
+  },
+});
+
+export const SessionVaultProvider: React.FC<PropsWithChildren> = ({ children }) => {
+  const clearSession = (): Promise<void> => {
+    return vault.clear();
+  };
+
+  const getSession = (): Promise<AuthResult | null> => {
+    return vault.getValue<AuthResult>(key);
+  };
+
+  const setSession = (value?: AuthResult): Promise<void> => {
+    return vault.setValue(key, value);
+  };
+
+  return (
+    <SessionVaultContext.Provider value={{ clearSession, getSession, setSession }}>
+      {children}
+    </SessionVaultContext.Provider>
+  );
+};
 ```
 
 </CH.Code>
@@ -201,7 +429,7 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
 };
 ```
 
-Wrap `IonReactRouter` with the new provider so the Context can be shared with the tabs.
+Don't forget to wrap `IonReactRouter` with the new provider so the Context can be shared with the Tabs.
 
 <CH.Section rows={3}>
 
@@ -321,5 +549,379 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
   return <AuthContext.Provider value={{}}>{children}</AuthContext.Provider>;
 };
 ```
+
+
+---
+
+### Initialization
+
+Auth Connect needs to be initialized before any functions can be used. 
+
+A flag in `AuthProvider` will prevent components within `IonReactRouter` from rendering until Auth Connect has initialized.
+
+```tsx AuthProvider.tsx mark=1[10:21] focus=17:24,29:38
+import { AuthConnect, ProviderOptions } from "@ionic-enterprise/auth";
+import { isPlatform } from "@ionic/react";
+import { PropsWithChildren, createContext } from "react";
+
+const isNative = isPlatform("hybrid");
+
+const options: ProviderOptions = {
+  audience: "https://io.ionic.demo.ac",
+  clientId: "yLasZNUGkZ19DGEjTmAITBfGXzqbvd00",
+  discoveryUrl:
+    "https://dev-2uspt-sz.us.auth0.com/.well-known/openid-configuration",
+  logoutUrl: isNative ? "msauth://login" : "http://localhost:8100/login",
+  redirectUri: isNative ? "msauth://login" : "http://localhost:8100/login",
+  scope: "openid offline_access email picture profile",
+};
+
+const setupAuthConnect = async (): Promise<void> => {
+  return AuthConnect.setup({
+    platform: isNative ? "capacitor" : "web",
+    logLevel: "DEBUG",
+    ios: { webView: "private" },
+    web: { uiMode: "popup", authFlow: "implicit" },
+  });
+};
+
+export const AuthContext = createContext<{}>({});
+
+export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
+  const [isSetup, setIsSetup] = useState<boolean>(false);
+
+  useEffect(() => {
+    setupAuthConnect().then(() => setIsSetup(true));
+  }, []);
+
+  return (
+    <AuthContext.Provider value={{}}>
+      {isSetup && children}
+    </AuthContext.Provider>
+  );
+};
+```
+
+---
+
+### The Provider
+
+A provider object specifying details on communicating with the OIDC service is required.
+
+Auth Connect offers several common providers out of the box: `Auth0Provider`, `AzureProvider`, `CognitoProvider`, `OktaProvider`, and `OneLoginProvider`. You can also create your own provider, though doing so is beyond the scope of this tutorial.
+
+```tsx AuthProvider.tsx mark=1[40:53] focus=26
+import { AuthConnect, ProviderOptions, Auth0Provider } from "@ionic-enterprise/auth";
+import { isPlatform } from "@ionic/react";
+import { PropsWithChildren, createContext } from "react";
+
+const isNative = isPlatform("hybrid");
+
+const options: ProviderOptions = {
+  audience: "https://io.ionic.demo.ac",
+  clientId: "yLasZNUGkZ19DGEjTmAITBfGXzqbvd00",
+  discoveryUrl:
+    "https://dev-2uspt-sz.us.auth0.com/.well-known/openid-configuration",
+  logoutUrl: isNative ? "msauth://login" : "http://localhost:8100/login",
+  redirectUri: isNative ? "msauth://login" : "http://localhost:8100/login",
+  scope: "openid offline_access email picture profile",
+};
+
+const setupAuthConnect = async (): Promise<void> => {
+  return AuthConnect.setup({
+    platform: isNative ? "capacitor" : "web",
+    logLevel: "DEBUG",
+    ios: { webView: "private" },
+    web: { uiMode: "popup", authFlow: "implicit" },
+  });
+};
+
+export const provider = new Auth0Provider();
+
+export const AuthContext = createContext<{}>({});
+
+export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
+  const [isSetup, setIsSetup] = useState<boolean>(false);
+
+  useEffect(() => {
+    setupAuthConnect().then(() => setIsSetup(true));
+  }, []);
+
+  return (
+    <AuthContext.Provider value={{}}>
+      {isSetup && children}
+    </AuthContext.Provider>
+  );
+};
+```
+
+---
+
+### Login and Logout
+
+Login and logout are the two most fundamental operations in the authentication flow. 
+
+Login requires both the `provider` and `options` established above. Login resolves an `AuthResult` if the operation succeeds. The `AuthResult` contains auth tokens as well as some other information. This object needs to be passed to almost all other `AuthConnect` functions; as such, it needs to be saved. The `login()` call rejects with an error if the user cancels the login or if something else prevents the login to complete.
+
+
+```tsx AuthProvider.tsx focus=29,31,36,42:45,48[36:41]
+import { AuthConnect, ProviderOptions, Auth0Provider } from "@ionic-enterprise/auth";
+import { isPlatform } from "@ionic/react";
+import { PropsWithChildren, createContext } from "react";
+
+const isNative = isPlatform("hybrid");
+
+const options: ProviderOptions = {
+  audience: "https://io.ionic.demo.ac",
+  clientId: "yLasZNUGkZ19DGEjTmAITBfGXzqbvd00",
+  discoveryUrl:
+    "https://dev-2uspt-sz.us.auth0.com/.well-known/openid-configuration",
+  logoutUrl: isNative ? "msauth://login" : "http://localhost:8100/login",
+  redirectUri: isNative ? "msauth://login" : "http://localhost:8100/login",
+  scope: "openid offline_access email picture profile",
+};
+
+const setupAuthConnect = async (): Promise<void> => {
+  return AuthConnect.setup({
+    platform: isNative ? "capacitor" : "web",
+    logLevel: "DEBUG",
+    ios: { webView: "private" },
+    web: { uiMode: "popup", authFlow: "implicit" },
+  });
+};
+
+export const provider = new Auth0Provider();
+
+export const AuthContext = createContext<{
+  login: () => Promise<void>;
+}>({
+  login: () => { throw new Error("Method not implemented."); }
+});
+
+export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
+  const [isSetup, setIsSetup] = useState<boolean>(false);
+  const [authResult, setAuthResult] = useState<AuthResult | null>(null);
+
+  useEffect(() => {
+    setupAuthConnect().then(() => setIsSetup(true));
+  }, []);
+
+  const login = async (): Promise<void> => {
+    const authResult = await AuthConnect.login(provider, options);
+    setAuthResult(authResult);
+  };
+
+  return (
+    <AuthContext.Provider value={{ login }}>
+      {isSetup && children}
+    </AuthContext.Provider>
+  );
+};
+```
+
+---
+
+Logout requires the `provider` as well as the `AuthResult` object returned by the `login()` call.
+
+```tsx AuthProvider.tsx focus=30,33,49:54,57[43:49]
+import { AuthConnect, ProviderOptions, Auth0Provider } from "@ionic-enterprise/auth";
+import { isPlatform } from "@ionic/react";
+import { PropsWithChildren, createContext } from "react";
+
+const isNative = isPlatform("hybrid");
+
+const options: ProviderOptions = {
+  audience: "https://io.ionic.demo.ac",
+  clientId: "yLasZNUGkZ19DGEjTmAITBfGXzqbvd00",
+  discoveryUrl:
+    "https://dev-2uspt-sz.us.auth0.com/.well-known/openid-configuration",
+  logoutUrl: isNative ? "msauth://login" : "http://localhost:8100/login",
+  redirectUri: isNative ? "msauth://login" : "http://localhost:8100/login",
+  scope: "openid offline_access email picture profile",
+};
+
+const setupAuthConnect = async (): Promise<void> => {
+  return AuthConnect.setup({
+    platform: isNative ? "capacitor" : "web",
+    logLevel: "DEBUG",
+    ios: { webView: "private" },
+    web: { uiMode: "popup", authFlow: "implicit" },
+  });
+};
+
+export const provider = new Auth0Provider();
+
+export const AuthContext = createContext<{
+  login: () => Promise<void>;
+  logout: () => Promise<void>;
+}>({
+  login: () => { throw new Error("Method not implemented."); },
+  logout: () => { throw new Error("Method not implemented."); }
+});
+
+export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
+  const [isSetup, setIsSetup] = useState<boolean>(false);
+  const [authResult, setAuthResult] = useState<AuthResult | null>(null);
+
+  useEffect(() => {
+    setupAuthConnect().then(() => setIsSetup(true));
+  }, []);
+
+  const login = async (): Promise<void> => {
+    const authResult = await AuthConnect.login(provider, options);
+    setAuthResult(authResult);
+  };
+
+  const logout = async (): Promise<void> => {
+    if (authResult) {
+      await AuthConnect.logout(provider, authResult);
+      setAuthResult(null);
+    }
+  };
+
+  return (
+    <AuthContext.Provider value={{ login, logout }}>
+      {isSetup && children}
+    </AuthContext.Provider>
+  );
+};
+```
+
+---
+
+To test these new functions, replace `ExploreContainer` with "Login" and "Logout" buttons in `src/pages/Tab1.tsx`.
+
+Using Ionic's Auth0 provider, functionality can be tested with the following credentials:
+
+- Email Address: `test@ionic.io`
+- Password: `Ion54321`
+
+```tsx Tab1.tsx focus=3,7,22:23
+import { IonContent, IonHeader, IonPage, IonTitle, IonToolbar } from '@ionic/react';
+import ExploreContainer from '../components/ExploreContainer';
+import { AuthContext } from '../providers/AuthProvider';
+import './Tab1.css';
+
+const Tab1: React.FC = () => {
+  const { login, logout } = useContext(AuthContext);
+
+  return (
+    <IonPage>
+      <IonHeader>
+        <IonToolbar>
+          <IonTitle>Tab 1</IonTitle>
+        </IonToolbar>
+      </IonHeader>
+      <IonContent fullscreen>
+        <IonHeader collapse="condense">
+          <IonToolbar>
+            <IonTitle size="large">Tab 1</IonTitle>
+          </IonToolbar>
+        </IonHeader>
+        <IonButton onClick={login}>Login</IonButton>
+        <IonButton onClick={logout}>Logout</IonButton>
+      </IonContent>
+    </IonPage>
+  );
+};
+
+export default Tab1;
+```
+
+--- 
+
+### Configure the Native Projects
+
+Login will fail when testing on a native device.
+
+This occurs because the native device doesn't know which application(s) handle navigation to the `msauth://` scheme (using Ionic's Auth0 provider). To register the application to handle the scheme, modify the `build.gradle` and `Info.plist` files as <a href="https://ionic.io/docs/auth-connect/install" target="_blank">noted here</a>.
+
+Replace `$AUTH_URL_SCHEME` with `msauth` when using Ionic's Auth0 provider.
+
+---
+
+### Determining the Current Auth Status
+
+```tsx AuthProvider.tsx focus=29,33,41,43:46,55,63,68[36:52]
+import { AuthConnect, ProviderOptions, Auth0Provider } from "@ionic-enterprise/auth";
+import { isPlatform } from "@ionic/react";
+import { PropsWithChildren, createContext } from "react";
+
+const isNative = isPlatform("hybrid");
+
+const options: ProviderOptions = {
+  audience: "https://io.ionic.demo.ac",
+  clientId: "yLasZNUGkZ19DGEjTmAITBfGXzqbvd00",
+  discoveryUrl:
+    "https://dev-2uspt-sz.us.auth0.com/.well-known/openid-configuration",
+  logoutUrl: isNative ? "msauth://login" : "http://localhost:8100/login",
+  redirectUri: isNative ? "msauth://login" : "http://localhost:8100/login",
+  scope: "openid offline_access email picture profile",
+};
+
+const setupAuthConnect = async (): Promise<void> => {
+  return AuthConnect.setup({
+    platform: isNative ? "capacitor" : "web",
+    logLevel: "DEBUG",
+    ios: { webView: "private" },
+    web: { uiMode: "popup", authFlow: "implicit" },
+  });
+};
+
+export const provider = new Auth0Provider();
+
+export const AuthContext = createContext<{
+  isAuthenticated: boolean;
+  login: () => Promise<void>;
+  logout: () => Promise<void>;
+}>({
+  isAuthenticated: false,
+  login: () => { throw new Error("Method not implemented."); },
+  logout: () => { throw new Error("Method not implemented."); }
+});
+
+export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
+  const [isSetup, setIsSetup] = useState<boolean>(false);
+  const [authResult, setAuthResult] = useState<AuthResult | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+
+  const getAuthResult = async (): Promise<AuthResult | null> => {
+    setIsAuthenticated(!!authResult);
+    return authResult;
+  };
+
+  useEffect(() => {
+    setupAuthConnect().then(() => setIsSetup(true));
+  }, []);
+
+  const login = async (): Promise<void> => {
+    const authResult = await AuthConnect.login(provider, options);
+    setAuthResult(authResult);
+    setIsAuthenticated(true);
+
+  };
+
+  const logout = async (): Promise<void> => {
+    if (authResult) {
+      await AuthConnect.logout(provider, authResult);
+      setAuthResult(null);
+      setIsAuthenticated(false);
+    }
+  };
+
+  return (
+    <AuthContext.Provider value={{ isAuthenticated, login, logout }}>
+      {isSetup && children}
+    </AuthContext.Provider>
+  );
+};
+```
+
+
+Users are shown both the login and logout buttons but you don't really know if the user is logged in or not. Let's change that.
+
+A simple strategy to use is tracking the status via state, updating the value after calling certain `AuthConnect` methods.
+
+Ignore the extra complexity with the `getAuthResult()` function -- we will expand on that as we go.
 
 </CH.Scrollycoding>
